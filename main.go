@@ -1,17 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 )
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("New request!")
-		http.NotFound(w, r)
-	})
+
+	mux.Handle("/", http.FileServer(http.Dir(".")))
 
 	s := http.Server{
 		Handler: mux,
