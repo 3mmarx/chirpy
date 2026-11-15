@@ -11,7 +11,7 @@ import (
 
 const createUser = `-- name: CreateUser :one
 insert into
-    users(id, created_at, udpated_at, email)
+    users(id, created_at, updated_at, email)
 values (
     gen_random_uuid(), NOW(), NOW(), $1
 )
@@ -28,4 +28,13 @@ func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
 		&i.Email,
 	)
 	return i, err
+}
+
+const deleteAllUsers = `-- name: DeleteAllUsers :exec
+delete from users
+`
+
+func (q *Queries) DeleteAllUsers(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllUsers)
+	return err
 }
