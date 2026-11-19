@@ -10,12 +10,14 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/3mmarx/chirpy/internal/auth"
 	"github.com/3mmarx/chirpy/internal/database"
 )
 
 func createUserHandler(db *database.Queries) http.HandlerFunc {
 	type request struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	type response struct {
@@ -42,12 +44,20 @@ func createUserHandler(db *database.Queries) http.HandlerFunc {
 			return
 		}
 
-		// insert user into db
-		dbUser, err := db.CreateUser(r.Context(), req.Email)
+		// generate password hash and insert user into db
+		hashedPassword, err := auth.HashPassword(req.Password)
+		if err != nil {
+			http.Error(w, "Couldn't create user", http.StatusInternalServerError)
+			return
+		}
+
+		dbUser, err := db.CreateUser(r.Context(), database.CreateUserParams{
+			Email:          req.Email,
+			HashedPassword: hashedPassword,
+		})
 		if err != nil {
 			log.Printf("Error creating user: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Couldn't create user"))
+			http.Error(w, "Couldn't create user", http.StatusInternalServerError)
 			return
 		}
 
@@ -60,6 +70,70 @@ func createUserHandler(db *database.Queries) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
+
+		if err := json.NewEncoder(w).Encode(user); err != nil {
+			log.Printf("Error encoding user response: %v", err)
+		}
+	}
+}
+
+func loginUser(db *database.Queries) http.HandlerFunc {
+	type request struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	type response struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		// decode the request body
+		var req request
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// validate the email
+		req.Email = strings.TrimSpace(req.Email)
+		parsed, err := mail.ParseAddress(req.Email)
+		if err != nil || parsed.Address != req.Email {
+			http.Error(w, "Invalid email", http.StatusBadRequest)
+			return
+		}
+
+		// Checking if user in db
+		dbUser, err := db.GetUserByEmail(r.Context(), req.Email)
+		if err != nil {
+			log.Printf("User not found: %v", err)
+			http.Error(w, "Couldn't login", http.StatusUnauthorized)
+			return
+		}
+
+		// validate password
+		match, err := auth.CheckPasswordHash(req.Password, dbUser.HashedPassword)
+		if !match || err != nil {
+			log.Printf("Invalid password: %v", err)
+			http.Error(w, "Couldn't login", http.StatusUnauthorized)
+			return
+		}
+
+		//! I USED THE SAME MESSAGE "Couldn't login"	FOR SECURITY REASONS.
+
+		user := response{
+			ID:        dbUser.ID,
+			CreatedAt: dbUser.CreatedAt,
+			UpdatedAt: dbUser.UpdatedAt,
+			Email:     dbUser.Email,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
 
 		if err := json.NewEncoder(w).Encode(user); err != nil {
 			log.Printf("Error encoding user response: %v", err)

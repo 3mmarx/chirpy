@@ -49,6 +49,7 @@ func main() {
 	mux.HandleFunc("GET /api/chirps/{chirpId}", getChirpById(dbQueries))
 	mux.HandleFunc("POST /api/chirps", createChirpHandler(dbQueries))
 
+	mux.HandleFunc("POST /api/login", loginUser(dbQueries))
 	mux.HandleFunc("POST /api/users", createUserHandler(dbQueries))
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.metricsHandler)
