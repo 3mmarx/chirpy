@@ -12,6 +12,41 @@ import (
 	"github.com/google/uuid"
 )
 
+func getAllChirps(db *database.Queries) http.HandlerFunc {
+	type response struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserID    uuid.UUID `json:"user_id"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		chirps, err := db.GetAllChirps(r.Context())
+		if err != nil {
+			http.Error(w, "Couldn't retrieve chirps", http.StatusInternalServerError)
+			return
+		}
+
+		res := make([]response, 0, len(chirps))
+		for _, chirp := range chirps {
+			res = append(res, response{
+				ID:        chirp.ID,
+				CreatedAt: chirp.CreatedAt,
+				UpdatedAt: chirp.UpdatedAt,
+				Body:      chirp.Body,
+				UserID:    chirp.UserID,
+			})
+		}
+
+		// send response
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(res); err != nil {
+			log.Printf("Error encoding chirp response: %v", err)
+		}
+	}
+}
+
 func createChirpHandler(db *database.Queries) http.HandlerFunc {
 	type request struct {
 		Body   string `json:"body"`
