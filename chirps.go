@@ -42,6 +42,44 @@ func getAllChirps(db *database.Queries) http.HandlerFunc {
 		// send response
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(res); err != nil {
+			log.Printf("Error encoding chirps response: %v", err)
+		}
+	}
+}
+
+func getChirpById(db *database.Queries) http.HandlerFunc {
+	type response struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserID    uuid.UUID `json:"user_id"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.PathValue("chirpId")
+		chirpId, err := uuid.Parse(path)
+		if err != nil {
+			http.Error(w, "Invalid chirp ID", http.StatusBadRequest)
+			return
+		}
+
+		chirp, err := db.GetChirpById(r.Context(), chirpId)
+		if err != nil {
+			http.Error(w, "Chirp not found", http.StatusNotFound)
+			return
+		}
+
+		// we don't encode and return chirp directly because it returns keys in the uppercase.
+		res := response{
+			ID:        chirp.ID,
+			CreatedAt: chirp.CreatedAt,
+			UpdatedAt: chirp.UpdatedAt,
+			Body:      chirp.Body,
+			UserID:    chirp.UserID,
+		}
+
+		if err := json.NewEncoder(w).Encode(res); err != nil {
 			log.Printf("Error encoding chirp response: %v", err)
 		}
 	}
