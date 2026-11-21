@@ -77,10 +77,11 @@ func createUserHandler(db *database.Queries) http.HandlerFunc {
 	}
 }
 
-func loginUser(db *database.Queries) http.HandlerFunc {
+func loginUser(apiConfig *apiConfig) http.HandlerFunc {
 	type request struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		ExpiresInSeconds *int   `json:"expires_in_seconds,omitempty"` // optional
 	}
 
 	type response struct {
@@ -88,6 +89,7 @@ func loginUser(db *database.Queries) http.HandlerFunc {
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
 		Email     string    `json:"email"`
+		Token     string    `json:"token"`
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +110,7 @@ func loginUser(db *database.Queries) http.HandlerFunc {
 		}
 
 		// Checking if user in db
-		dbUser, err := db.GetUserByEmail(r.Context(), req.Email)
+		dbUser, err := apiConfig.db.GetUserByEmail(r.Context(), req.Email)
 		if err != nil {
 			log.Printf("User not found: %v", err)
 			http.Error(w, "Couldn't login", http.StatusUnauthorized)
@@ -123,13 +125,32 @@ func loginUser(db *database.Queries) http.HandlerFunc {
 			return
 		}
 
-		//! I USED THE SAME MESSAGE "Couldn't login"	FOR SECURITY REASONS.
+		expiresInSeconds := 3600
+		if req.ExpiresInSeconds != nil {
+			if *req.ExpiresInSeconds <= 0 {
+				log.Print("Invalid expiration time: ExpiresInSeconds should be more than 0")
+				http.Error(w, "expires_in_seconds must be greater than 0", http.StatusBadRequest)
+				return
+			}
+
+			expiresInSeconds = min(*req.ExpiresInSeconds, 3600)
+		}
+
+		token, err := auth.MakeJWT(dbUser.ID, apiConfig.jwtSecret, time.Duration(expiresInSeconds)*time.Second)
+		if err != nil {
+			log.Printf("failed to generate jwt token: %v", err)
+			http.Error(w, "Couldn't login", http.StatusInternalServerError)
+			return
+		}
+
+		//! I'VE USED THE SAME MESSAGE "Couldn't login" FOR SECURITY REASONS.
 
 		user := response{
 			ID:        dbUser.ID,
 			CreatedAt: dbUser.CreatedAt,
 			UpdatedAt: dbUser.UpdatedAt,
 			Email:     dbUser.Email,
+			Token:     token,
 		}
 
 		w.Header().Set("Content-Type", "application/json")

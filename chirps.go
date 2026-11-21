@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/3mmarx/chirpy/internal/auth"
 	"github.com/3mmarx/chirpy/internal/database"
 	"github.com/google/uuid"
 )
@@ -85,10 +86,9 @@ func getChirpById(db *database.Queries) http.HandlerFunc {
 	}
 }
 
-func createChirpHandler(db *database.Queries) http.HandlerFunc {
+func createChirpHandler(apiConfig *apiConfig) http.HandlerFunc {
 	type request struct {
-		Body   string `json:"body"`
-		UserID string `json:"user_id"`
+		Body string `json:"body"`
 	}
 
 	type response struct {
@@ -100,6 +100,20 @@ func createChirpHandler(db *database.Queries) http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		// check if "Authorization" header exists and valid
+		token, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+
+		// validate the jwt token
+		userID, err := auth.ValidateJWT(token, apiConfig.jwtSecret)
+		if err != nil {
+			http.Error(w, "Invalid jwt token", http.StatusUnauthorized)
+			return
+		}
+
 		// decode request body
 		var req request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -114,15 +128,8 @@ func createChirpHandler(db *database.Queries) http.HandlerFunc {
 			return
 		}
 
-		// validate userid
-		userID, err := uuid.Parse(req.UserID)
-		if err != nil {
-			http.Error(w, "Invalid user ID", http.StatusBadRequest)
-			return
-		}
-
 		// insert into db
-		dbChirp, err := db.CreateChirp(r.Context(), database.CreateChirpParams{
+		dbChirp, err := apiConfig.db.CreateChirp(r.Context(), database.CreateChirpParams{
 			Body: validChirp, UserID: userID,
 		})
 		if err != nil {
