@@ -79,17 +79,17 @@ func createUserHandler(db *database.Queries) http.HandlerFunc {
 
 func loginUser(apiConfig *apiConfig) http.HandlerFunc {
 	type request struct {
-		Email            string `json:"email"`
-		Password         string `json:"password"`
-		ExpiresInSeconds *int   `json:"expires_in_seconds,omitempty"` // optional
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	type response struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
-		Token     string    `json:"token"`
+		ID           uuid.UUID `json:"id"`
+		CreatedAt    time.Time `json:"created_at"`
+		UpdatedAt    time.Time `json:"updated_at"`
+		Email        string    `json:"email"`
+		Token        string    `json:"token"`
+		RefreshToken string    `json:"refresh_token"`
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -125,20 +125,23 @@ func loginUser(apiConfig *apiConfig) http.HandlerFunc {
 			return
 		}
 
-		expiresInSeconds := 3600
-		if req.ExpiresInSeconds != nil {
-			if *req.ExpiresInSeconds <= 0 {
-				log.Print("Invalid expiration time: ExpiresInSeconds should be more than 0")
-				http.Error(w, "expires_in_seconds must be greater than 0", http.StatusBadRequest)
-				return
-			}
-
-			expiresInSeconds = min(*req.ExpiresInSeconds, 3600)
-		}
-
-		token, err := auth.MakeJWT(dbUser.ID, apiConfig.jwtSecret, time.Duration(expiresInSeconds)*time.Second)
+		oneHour := time.Hour
+		token, err := auth.MakeJWT(dbUser.ID, apiConfig.jwtSecret, oneHour) // expire access token after 1 hour
 		if err != nil {
 			log.Printf("failed to generate jwt token: %v", err)
+			http.Error(w, "Couldn't login", http.StatusInternalServerError)
+			return
+		}
+
+		refreshToken := auth.MakeRefreshToken()
+
+		_, err = apiConfig.db.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+			Token:     refreshToken,
+			UserID:    dbUser.ID,
+			ExpiresAt: time.Now().UTC().Add(60 * 24 * time.Hour), // expires after 60 days
+		})
+		if err != nil {
+			log.Printf("failed to create refresh token: %v", err)
 			http.Error(w, "Couldn't login", http.StatusInternalServerError)
 			return
 		}
@@ -146,11 +149,12 @@ func loginUser(apiConfig *apiConfig) http.HandlerFunc {
 		//! I'VE USED THE SAME MESSAGE "Couldn't login" FOR SECURITY REASONS.
 
 		user := response{
-			ID:        dbUser.ID,
-			CreatedAt: dbUser.CreatedAt,
-			UpdatedAt: dbUser.UpdatedAt,
-			Email:     dbUser.Email,
-			Token:     token,
+			ID:           dbUser.ID,
+			CreatedAt:    dbUser.CreatedAt,
+			UpdatedAt:    dbUser.UpdatedAt,
+			Email:        dbUser.Email,
+			Token:        token,
+			RefreshToken: refreshToken,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
