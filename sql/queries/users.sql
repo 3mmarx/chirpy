@@ -22,3 +22,6 @@ JOIN
 WHERE
     refresh_tokens.token = $1 AND refresh_tokens.revoked_at IS NULL AND NOW() < refresh_tokens.expires_at
 LIMIT 1;
+
+-- name: UpdateUserById :one
+UPDATE users SET email = $1, hashed_password = $2 WHERE id = $3 RETURNING *;
