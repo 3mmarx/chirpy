@@ -154,6 +154,54 @@ func createChirpHandler(apiConfig *apiConfig) http.HandlerFunc {
 	}
 }
 
+func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, r *http.Request) {
+	// get and validate access token
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(accessToken, cfg.jwtSecret)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// get chirpID, validate it and get it from db
+	stringChirpID := r.PathValue("chirpID")
+	if stringChirpID == "" {
+		http.Error(w, "Supply a chirp id", http.StatusBadRequest)
+		return
+	}
+
+	chirpID, err := uuid.Parse(stringChirpID)
+	if err != nil {
+		http.Error(w, "Invalid chirp id", http.StatusBadRequest)
+		return
+	}
+
+	dbChirp, err := cfg.db.GetChirpById(r.Context(), chirpID)
+	if err != nil {
+		http.Error(w, "No chirp found", http.StatusNotFound)
+		return
+	}
+
+	// check if the deleter is the author
+	if userID != dbChirp.UserID {
+		http.Error(w, "Unauthorized", http.StatusForbidden)
+		return
+	}
+
+	err = cfg.db.DeleteChirpById(r.Context(), dbChirp.ID)
+	if err != nil {
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func validateChirp(chirp string) (string, error) {
 	if len(chirp) > 140 {
 		return "", errors.New("Chirp is too long")
