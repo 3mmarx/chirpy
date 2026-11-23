@@ -25,3 +25,6 @@ LIMIT 1;
 
 -- name: UpdateUserById :one
 UPDATE users SET email = $1, hashed_password = $2 WHERE id = $3 RETURNING *;
+
+-- name: UpgradeUserToChirpyRedById :one
+UPDATE users set is_chirpy_red = TRUE WHERE id = $1 RETURNING *;
