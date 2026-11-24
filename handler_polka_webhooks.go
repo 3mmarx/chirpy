@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/3mmarx/chirpy/internal/auth"
 	"github.com/google/uuid"
 )
 
@@ -19,8 +20,19 @@ type Data struct {
 }
 
 func (cfg *apiConfig) PolkaWebhooksHandler(w http.ResponseWriter, r *http.Request) {
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	if apiKey != cfg.polkaAPIKey {
+		http.Error(w, "Invalid API Key", http.StatusUnauthorized)
+		return
+	}
+
 	var polkaReq PolkaRequest
-	err := json.NewDecoder(r.Body).Decode(&polkaReq)
+	err = json.NewDecoder(r.Body).Decode(&polkaReq)
 	if err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
