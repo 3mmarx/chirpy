@@ -23,6 +23,40 @@ func getAllChirps(db *database.Queries) http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		// return all chirps for an author
+		stringAuthorID := r.URL.Query().Get("author_id")
+		if stringAuthorID != "" {
+			authorID, err := uuid.Parse(stringAuthorID)
+			if err != nil {
+				http.Error(w, "Invalid author id", http.StatusBadRequest)
+				return
+			}
+
+			chirps, err := db.GetAllChirpsForAuthorById(r.Context(), authorID)
+			if err != nil {
+				http.Error(w, "Couldn't retrieve chirps", http.StatusInternalServerError)
+				return
+			}
+
+			res := make([]response, 0, len(chirps))
+			for _, chirp := range chirps {
+				res = append(res, response{
+					ID:        chirp.ID,
+					CreatedAt: chirp.CreatedAt,
+					UpdatedAt: chirp.UpdatedAt,
+					Body:      chirp.Body,
+					UserID:    chirp.UserID,
+				})
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(res); err != nil {
+				log.Printf("Error encoding chirps response: %v", err)
+			}
+
+			return
+		}
+
 		chirps, err := db.GetAllChirps(r.Context())
 		if err != nil {
 			http.Error(w, "Couldn't retrieve chirps", http.StatusInternalServerError)
