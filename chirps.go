@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +13,18 @@ import (
 	"github.com/3mmarx/chirpy/internal/database"
 	"github.com/google/uuid"
 )
+
+func authorIDFromRequest(r *http.Request) (uuid.UUID, error) {
+	authorIDString := r.URL.Query().Get("author_id")
+	if authorIDString == "" {
+		return uuid.Nil, nil
+	}
+	authorID, err := uuid.Parse(authorIDString)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return authorID, nil
+}
 
 func getAllChirps(db *database.Queries) http.HandlerFunc {
 	type response struct {
@@ -24,40 +37,18 @@ func getAllChirps(db *database.Queries) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		// return all chirps for an author
-		stringAuthorID := r.URL.Query().Get("author_id")
-		if stringAuthorID != "" {
-			authorID, err := uuid.Parse(stringAuthorID)
-			if err != nil {
-				http.Error(w, "Invalid author id", http.StatusBadRequest)
-				return
-			}
-
-			chirps, err := db.GetAllChirpsForAuthorById(r.Context(), authorID)
-			if err != nil {
-				http.Error(w, "Couldn't retrieve chirps", http.StatusInternalServerError)
-				return
-			}
-
-			res := make([]response, 0, len(chirps))
-			for _, chirp := range chirps {
-				res = append(res, response{
-					ID:        chirp.ID,
-					CreatedAt: chirp.CreatedAt,
-					UpdatedAt: chirp.UpdatedAt,
-					Body:      chirp.Body,
-					UserID:    chirp.UserID,
-				})
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(res); err != nil {
-				log.Printf("Error encoding chirps response: %v", err)
-			}
-
+		authorID, err := authorIDFromRequest(r)
+		if err != nil {
+			http.Error(w, "Invalid author ID", http.StatusBadRequest)
 			return
 		}
 
-		chirps, err := db.GetAllChirps(r.Context())
+		var chirps []database.Chirp
+		if authorID != uuid.Nil {
+			chirps, err = db.GetAllChirpsForAuthorById(r.Context(), authorID)
+		} else {
+			chirps, err = db.GetAllChirps(r.Context())
+		}
 		if err != nil {
 			http.Error(w, "Couldn't retrieve chirps", http.StatusInternalServerError)
 			return
@@ -74,7 +65,26 @@ func getAllChirps(db *database.Queries) http.HandlerFunc {
 			})
 		}
 
-		// send response
+		sortOrder := r.URL.Query().Get("sort")
+		if sortOrder == "" {
+			sortOrder = "asc"
+		}
+
+		switch sortOrder {
+		case "asc":
+			slices.SortFunc(res, func(a, b response) int {
+				return a.CreatedAt.Compare(b.CreatedAt)
+			})
+		case "desc":
+			slices.SortFunc(res, func(a, b response) int {
+				return b.CreatedAt.Compare(a.CreatedAt)
+			})
+		default:
+			http.Error(w, "Invalid sort parameter. Use 'asc' or 'desc'", http.StatusBadRequest)
+			return
+		}
+
+		// Encode response
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(res); err != nil {
 			log.Printf("Error encoding chirps response: %v", err)
